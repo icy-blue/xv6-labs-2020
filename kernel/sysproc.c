@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -103,5 +104,18 @@ sys_trace(void) {
         return -1;
     }
     myproc()->mask = mask;
+    return 0;
+}
+
+uint64
+sys_sysinfo(void) {
+    struct sysinfo info;
+    uint64 address;
+    argaddr(0, &address);
+    // if(argaddr(0, &address) < 0) return -1; // document said that copyin/copyout will do that.
+    struct proc* p = myproc();
+    info.freemem = free_proc();
+    info.nproc = proc_size();
+    if(copyout(p->pagetable, address, (char*)&info, sizeof(info)) < 0) return -1;
     return 0;
 }

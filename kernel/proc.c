@@ -693,3 +693,11 @@ procdump(void)
     printf("\n");
   }
 }
+
+int proc_size(void){
+    int size = 0;
+    for(int i = 0; i < NPROC; i++){
+        if(proc[i].state != UNUSED) size++;
+    }
+    return size;
+}
