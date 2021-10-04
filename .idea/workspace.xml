@@ -13,7 +13,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="aa6ad91f-58f7-403c-8f70-f19a8dfb2b56" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/grade-lab-pgtbl" beforeDir="false" afterPath="$PROJECT_DIR$/grade-lab-pgtbl" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/kernel/defs.h" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/defs.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/exec.c" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/exec.c" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/kernel/proc.c" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/proc.c" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/kernel/vm.c" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/vm.c" afterDir="false" />
     </list>
@@ -94,7 +97,7 @@
       <option name="presentableId" value="Default" />
       <updated>1632907420908</updated>
       <workItem from="1632907423830" duration="1667000" />
-      <workItem from="1633326139337" duration="13540000" />
+      <workItem from="1633326139337" duration="14660000" />
     </task>
     <servers />
   </component>

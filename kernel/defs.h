@@ -109,7 +109,7 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
-pagetable_t     proc_kpagetable();
+pagetable_t     proc_kpagetable(struct proc *p);
 
 // swtch.S
 void            swtch(struct context*, struct context*);
@@ -186,6 +186,11 @@ void            ukvmmap(pagetable_t pagetable ,uint64 va, uint64 pa, uint64 sz, 
 pte_t*          walk(pagetable_t pagetable, uint64 va, int alloc);
 void            ukvmunmap(pagetable_t pagetable, uint64 va, uint64 size);
 void            freewalk(pagetable_t pagetable);
+void            u2kvmcopy(pagetable_t pagetable, pagetable_t kpagetable, uint64 oldsz, uint64 newsz);
+
+// vmcopyin.c
+int             copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
+int             copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
 
 // plic.c
 void            plicinit(void);
