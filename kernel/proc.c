@@ -32,16 +32,6 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
-      // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
-      // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
   }
   kvminithart();
 }
@@ -131,12 +121,12 @@ found:
       return 0;
   }
 
-  //// use the stack existed.
-  pte_t* pte = walk(kernel_pagetable, p->kstack, 0);
-  uint64 pa = PTE2PA(*pte);
+  uint64 pa = (uint64) kalloc();
   if(pa == 0)
       panic("kalloc");
-  ukvmmap(p->kpagetable, p->kstack, pa, PGSIZE, PTE_R | PTE_W);
+  uint64 va = KSTACK((int) (p-proc));
+  ukvmmap(p->kpagetable, va, pa, PGSIZE, PTE_R | PTE_W);
+  p->kstack = va;
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -156,10 +146,19 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  // free kernel stack
+  if(p->kstack)
+  {
+      pte_t* pte = walk(p->kpagetable, p->kstack, 0);
+      if (pte == 0)
+          panic("freeproc: walk");
+      kfree((void*)PTE2PA(*pte));
+  }
+  p->kstack = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   if(p->kpagetable)
-      proc_freekpagetable(p);
+      proc_freekpagetable(p->kpagetable);
   p->kpagetable = 0;
   p->pagetable = 0;
   p->sz = 0;
@@ -205,17 +204,34 @@ proc_pagetable(struct proc *p)
   return pagetable;
 }
 
+pagetable_t
+proc_kpagetable() {
+    //// idea copied from kvminit() from vm.c
+    //// still don't know why
+    pagetable_t kpagetable = uvmcreate();
+    if(kpagetable == 0) return 0;
+    ukvmmap(kpagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+    ukvmmap(kpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+    ukvmmap(kpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+    ukvmmap(kpagetable, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+    ukvmmap(kpagetable, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+    ukvmmap(kpagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+    return kpagetable;
+}
+
 void
-proc_freekpagetable(struct proc *p){
-    ukvmunmap(p->kpagetable, UART0, PGSIZE);
-    ukvmunmap(p->kpagetable, VIRTIO0, PGSIZE);
-    ukvmunmap(p->kpagetable, CLINT, 0x10000);
-    ukvmunmap(p->kpagetable, PLIC, 0x400000);
-    ukvmunmap(p->kpagetable, KERNBASE, (uint64)etext-KERNBASE);
-    ukvmunmap(p->kpagetable, (uint64)etext, PHYSTOP - (uint64)etext);
-    ukvmunmap(p->kpagetable, TRAMPOLINE, PGSIZE);
-    ukvmunmap(p->kpagetable, p->kstack, PGSIZE);
-    freewalk(p->kpagetable);
+proc_freekpagetable(pagetable_t kpagetable){
+    for (int i = 0; i < 512; i++) {
+        pte_t pte = kpagetable[i];
+        if (pte & PTE_V) {
+            kpagetable[i] = 0;
+            if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+                uint64 child = PTE2PA(pte);
+                proc_freekpagetable((pagetable_t)child);
+            }
+        }
+    }
+    kfree((void*)kpagetable);
 }
 
 

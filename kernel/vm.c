@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -132,7 +134,7 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
-  pte = walk(kernel_pagetable, va, 0);
+  pte = walk(myproc()->kpagetable, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -460,22 +462,6 @@ void
 vmprint(pagetable_t pt) {
     printf("page table %p\n", pt);
     dfs(pt, 1);
-}
-
-pagetable_t
-proc_kpagetable() {
-    //// idea copied from kvminit() from vm.c
-    //// still don't know why
-    pagetable_t kpagetable = uvmcreate();
-    if(kpagetable == 0) return 0;
-    ukvmmap(kpagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
-    ukvmmap(kpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
-    ukvmmap(kpagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
-    ukvmmap(kpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
-    ukvmmap(kpagetable, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
-    ukvmmap(kpagetable, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
-    ukvmmap(kpagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
-    return kpagetable;
 }
 
 void
