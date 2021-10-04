@@ -20,6 +20,8 @@ static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+extern char etext[];  // kernel.ld sets this to end of kernel code.
+extern pagetable_t kernel_pagetable;
 
 // initialize the proc table at boot time.
 void
@@ -121,6 +123,21 @@ found:
     return 0;
   }
 
+  //// idea copied from code above.
+  p->kpagetable = proc_kpagetable();
+  if(p->kpagetable == 0){
+      freeproc(p);
+      release(&p->lock);
+      return 0;
+  }
+
+  //// use the stack existed.
+  pte_t* pte = walk(kernel_pagetable, p->kstack, 0);
+  uint64 pa = PTE2PA(*pte);
+  if(pa == 0)
+      panic("kalloc");
+  ukvmmap(p->kpagetable, p->kstack, pa, PGSIZE, PTE_R | PTE_W);
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -141,6 +158,9 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->kpagetable)
+      proc_freekpagetable(p);
+  p->kpagetable = 0;
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -184,6 +204,20 @@ proc_pagetable(struct proc *p)
 
   return pagetable;
 }
+
+void
+proc_freekpagetable(struct proc *p){
+    ukvmunmap(p->kpagetable, UART0, PGSIZE);
+    ukvmunmap(p->kpagetable, VIRTIO0, PGSIZE);
+    ukvmunmap(p->kpagetable, CLINT, 0x10000);
+    ukvmunmap(p->kpagetable, PLIC, 0x400000);
+    ukvmunmap(p->kpagetable, KERNBASE, (uint64)etext-KERNBASE);
+    ukvmunmap(p->kpagetable, (uint64)etext, PHYSTOP - (uint64)etext);
+    ukvmunmap(p->kpagetable, TRAMPOLINE, PGSIZE);
+    ukvmunmap(p->kpagetable, p->kstack, PGSIZE);
+    freewalk(p->kpagetable);
+}
+
 
 // Free a process's page table, and free the
 // physical memory it refers to.
@@ -473,6 +507,11 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        //// To init the kernal page table of the process
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma(); // flush the TLB.
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
@@ -485,6 +524,8 @@ scheduler(void)
     }
 #if !defined (LAB_FS)
     if(found == 0) {
+      w_satp(MAKE_SATP(kernel_pagetable));
+      sfence_vma();
       intr_on();
       asm volatile("wfi");
     }

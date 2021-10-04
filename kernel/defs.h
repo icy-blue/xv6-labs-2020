@@ -91,6 +91,7 @@ void            exit(int);
 int             fork(void);
 int             growproc(int);
 pagetable_t     proc_pagetable(struct proc *);
+void            proc_freekpagetable(struct proc *);
 void            proc_freepagetable(pagetable_t, uint64);
 int             kill(int);
 struct cpu*     mycpu(void);
@@ -178,6 +179,13 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+void            dfs(pagetable_t pt, int dep);
+void            vmprint(pagetable_t pt);
+pagetable_t     proc_kpagetable();
+void            ukvmmap(pagetable_t pagetable ,uint64 va, uint64 pa, uint64 sz, int perm);
+pte_t*          walk(pagetable_t pagetable, uint64 va, int alloc);
+void            ukvmunmap(pagetable_t pagetable, uint64 va, uint64 size);
+void            freewalk(pagetable_t pagetable);
 
 // plic.c
 void            plicinit(void);

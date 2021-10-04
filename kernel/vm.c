@@ -440,3 +440,68 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+void
+dfs(pagetable_t pt, int dep) {
+    for(int i = 0; i < 512; i++) {
+        pte_t pte = pt[i];
+        if(pte & PTE_V) {
+            for(int j = 1; j < dep; j++) printf(".. ");
+            uint64 child = PTE2PA(pte);
+            printf("..%d: pte %p pa %p\n", i, pte, child);
+            if((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+                dfs((pagetable_t) child, dep+1);
+            }
+        }
+    }
+}
+
+void
+vmprint(pagetable_t pt) {
+    printf("page table %p\n", pt);
+    dfs(pt, 1);
+}
+
+pagetable_t
+proc_kpagetable() {
+    //// idea copied from kvminit() from vm.c
+    //// still don't know why
+    pagetable_t kpagetable = uvmcreate();
+    if(kpagetable == 0) return 0;
+    ukvmmap(kpagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+    ukvmmap(kpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+    ukvmmap(kpagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+    ukvmmap(kpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+    ukvmmap(kpagetable, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+    ukvmmap(kpagetable, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+    ukvmmap(kpagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+    return kpagetable;
+}
+
+void
+ukvmmap(pagetable_t pagetable, uint64 va, uint64 pa, uint64 sz, int perm) {
+    if(mappages(pagetable, va, sz, pa, perm) != 0)
+        panic("ukvmmap");
+}
+
+void
+ukvmunmap(pagetable_t pagetable, uint64 va, uint64 size) {
+    uint64 a, last;
+    pte_t *pte;
+
+    a = PGROUNDDOWN(va);
+    last = PGROUNDDOWN(va + size - 1);
+
+    while(1){
+        if((pte = walk(pagetable, a, 0)) == 0)
+            panic("ukvmunmap: walk");
+        if((*pte & PTE_V) == 0)
+            panic("ukvmunmap: not mapped");
+        if(PTE_FLAGS(*pte) == PTE_V)
+            panic("ukvmunmap: not a leaf");
+        *pte = 0;
+        if (a==last)
+            break;
+        a+=PGSIZE;
+    }
+}
