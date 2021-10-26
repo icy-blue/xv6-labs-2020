@@ -87,8 +87,7 @@ kfree(void *pa)
     panic("kfree");
 
   acquire(&kmem.lock);
-  int x = kmem.rc[(uint64)pa / PGSIZE]--;
-  if(kmem.rc[x] <= 0) {
+  if(--kmem.rc[(uint64)pa / PGSIZE] <= 0) {
       // Fill with junk to catch dangling refs.
       memset(pa, 1, PGSIZE);
       r = (struct run*)pa;
