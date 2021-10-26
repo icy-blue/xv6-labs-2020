@@ -180,7 +180,6 @@ filetest()
 int
 main(int argc, char *argv[])
 {
-    printf("cowtest");
   simpletest();
 
   // check that the first simpletest() freed the physical memory.
