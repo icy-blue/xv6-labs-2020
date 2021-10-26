@@ -37,8 +37,8 @@ freerange(void *pa_start, void *pa_end)
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
-      kmem.rc[(uint64)p / PGSIZE] = 1;
-      kfree(p);
+    kmem.rc[(uint64)p / PGSIZE] = 1;
+    kfree(p);
   }
 }
 
@@ -46,6 +46,32 @@ void inc_rc(uint64 pa) {
     acquire((&kmem.lock));
     kmem.rc[pa / PGSIZE]++;
     release(&kmem.lock);
+}
+
+int cow_alloc(pagetable_t pagetable, uint64 va) {
+    uint64 pa, mem;
+    pte_t *pte;
+    if (va >= MAXVA)
+        return -1;
+    va = PGROUNDDOWN(va);
+    pte = walk(pagetable, va, 0);
+    if (pte == 0) return -1;
+    if (!(*pte & PTE_V)) return -1;
+    pa = PTE2PA(*pte);
+    acquire(&kmem.lock);
+    if (kmem.rc[pa / PGSIZE] == 1) {
+        *pte &= ~PTE_COW;
+        *pte |= PTE_W;
+        release(&kmem.lock);
+        return 0;
+    }
+    release(&kmem.lock);
+    if ((mem = (uint64)kalloc()) == 0) return -3;
+    memmove((void *)mem, (void *)pa, PGSIZE);
+    *pte = ((PA2PTE(mem) | PTE_FLAGS(*pte) | PTE_W) & (~PTE_COW));
+    // decrease rc
+    kfree((void *)pa);
+    return 0;
 }
 
 // Free the page of physical memory pointed at by v,
@@ -60,14 +86,15 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
-
-  r = (struct run*)pa;
-
   acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
+  int x = kmem.rc[(uint64)pa / PGSIZE]--;
+  if(kmem.rc[x] <= 0) {
+      // Fill with junk to catch dangling refs.
+      memset(pa, 1, PGSIZE);
+      r = (struct run*)pa;
+      r->next = kmem.freelist;
+      kmem.freelist = r;
+  }
   release(&kmem.lock);
 }
 
@@ -81,8 +108,10 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
+  if(r) {
+      kmem.freelist = r->next;
+      kmem.rc[(uint64)r / PGSIZE] = 1;
+  }
   release(&kmem.lock);
 
   if(r)

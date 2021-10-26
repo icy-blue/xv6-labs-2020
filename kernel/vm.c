@@ -324,7 +324,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
         *pte = PA2PTE(pa) | flags;
     }
     inc_rc(pa);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
   }
@@ -358,6 +358,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    cow_alloc(pagetable, va0);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
