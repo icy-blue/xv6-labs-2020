@@ -6,8 +6,6 @@
 #include "defs.h"
 #include "fs.h"
 
-uint32 refs[KALLOC_PAGE];
-
 /*
  * the kernel's page table.
  */
@@ -16,9 +14,6 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
-
-extern char end[]; // first address after kernel.
-// defined by kernel.ld.
 
 /*
  * create a direct-map page table for the kernel.
@@ -161,8 +156,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
-//    if(*pte & PTE_V)
-//      panic("remap");
+    if(*pte & PTE_V)
+      panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -316,6 +311,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
+  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -323,18 +319,20 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
-    *pte = (*pte & ~PTE_W) | PTE_COW;
     flags = PTE_FLAGS(*pte);
-    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
-      panic("mapping page for uvmcopy()");
+    if((mem = kalloc()) == 0)
+      goto err;
+    memmove(mem, (char*)pa, PGSIZE);
+    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+      kfree(mem);
+      goto err;
     }
-    add_ref(pa);
   }
   return 0;
 
-// err:
-//  uvmunmap(new, 0, i / PGSIZE, 1);
-//  return -1;
+ err:
+  uvmunmap(new, 0, i / PGSIZE, 1);
+  return -1;
 }
 
 // mark a PTE invalid for user access.
@@ -357,35 +355,9 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
-  pte_t *pte;
+
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    if(va0 >= MAXVA){
-        //printf("copyout(): va is greater than MAXVA\n");
-        return -1;
-    }
-    pte = walk(pagetable, va0, 0);
-    if(*pte & PTE_COW) {
-      char *mem; // ref=1? change the flag of pte?
-      if((mem = kalloc()) == 0) {
-          printf("copyout(): memery alloc fault\n");
-          return -1;
-      }
-      printf("copyout\n");
-      memset(mem, 0, PGSIZE);
-      uint64 pa = walkaddr(pagetable, va0);
-      if(pa) { // alloc a new user-mode page
-        memmove(mem, (char*)pa, PGSIZE);
-        int perm = PTE_FLAGS(*pte);
-        perm = (perm & ~PTE_COW) | PTE_W;
-        if(mappages(pagetable, va0, PGSIZE, (uint64)mem, perm) != 0) {
-            printf("copyout(): can not map page\n");
-            kfree(mem);
-            return -1;
-        }
-        kfree((void*) pa);
-      }
-    }
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;

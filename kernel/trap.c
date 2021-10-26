@@ -67,61 +67,6 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else if(r_scause() == 15) {
-    pte_t *pte;
-    uint64 va = PGROUNDDOWN(r_stval());
-
-    if (va >= MAXVA) {
-        printf("va is larger than MAXVA!\n");
-        p->killed = 1;
-        exit(-1);
-    }
-
-    if (va > p->sz){
-        printf("va is larger than sz!\n");
-        p->killed = 1;
-        exit(-1);
-    }
-
-    pte = walk(p->pagetable, va, 0);
-
-    if(pte == 0 || ((*pte) & PTE_COW) == 0 || ((*pte) & PTE_V) == 0 || ((*pte) & PTE_U)==0) {
-        printf("usertrap: pte not exist or it's not cow page\n");
-        p->killed = 1;
-        exit(-1);
-    }
-
-    if(*pte & PTE_COW) {
-        char *mem;
-        if((mem = kalloc()) == 0) {
-            printf("usertrap(): memery alloc fault\n");
-            p->killed = 1;
-            exit(-1);
-        }
-        memset(mem, 0, PGSIZE);
-        uint64 pa = walkaddr(p->pagetable, va);
-
-      if(pa) {
-          memmove(mem, (char*)pa, PGSIZE);
-          int perm = PTE_FLAGS(*pte);
-          perm = (perm & ~PTE_COW) | PTE_W;
-          if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, perm) != 0){
-              printf("usertrap(): can not map page\n");
-              kfree(mem);
-              p->killed = 1;
-          }
-          // mem处是新的页，添加一处引用，原来的物理地址减少一处引用
-          kfree((void*) pa);
-      } else {
-          printf("usertrap(): can not map va: %p \n", va);
-          p->killed = 1;
-          exit(-1);
-      }
-    } else {
-        printf("usertrap(): not caused by cow \n");
-        p->killed = 1;
-        exit(-1);
-    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
