@@ -21,6 +21,7 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+  int rc[PHYSTOP / PGSIZE];
 } kmem;
 
 void
@@ -35,8 +36,16 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
-    kfree(p);
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
+      kmem.rc[(uint64)p / PGSIZE] = 1;
+      kfree(p);
+  }
+}
+
+void inc_rc(uint64 pa) {
+    acquire((&kmem.lock));
+    kmem.rc[pa / PGSIZE]++;
+    release(&kmem.lock);
 }
 
 // Free the page of physical memory pointed at by v,
