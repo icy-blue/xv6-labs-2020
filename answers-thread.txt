@@ -1,0 +1,1 @@
+Note that the changes in put() leads to mis-overwritten on e->next in insert() when multi-processing.
