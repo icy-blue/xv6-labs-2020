@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
 
 struct cpu cpus[NCPU];
 
@@ -280,6 +284,18 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+
+  for(int i = 0; i < NVMA; i++) {
+    if(p->vma[i] == 0) continue;
+    np->vma[i] = vma_alloc();
+    np->vma[i]->addr = p->vma[i]->addr;
+    np->vma[i]->length = p->vma[i]->length;
+    np->vma[i]->prot = p->vma[i]->prot;
+    np->vma[i]->flags = p->vma[i]->flags;
+    np->vma[i]->f = p->vma[i]->f;
+    filedup(p->vma[i]->f);
+  }
+
   np->sz = p->sz;
 
   np->parent = p;
@@ -343,6 +359,21 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  for(int i = 0; i < NVMA; i++) {
+    if(p->vma[i] == 0) continue;
+    struct VMA *vma = p->vma[i];
+    if(vma->prot & PROT_WRITE && vma->flags == MAP_SHARED) {
+      begin_op();
+      ilock(vma->f->ip);
+      writei(vma->f->ip, 1, vma->addr, 0, vma->length);
+      iunlock(vma->f->ip);
+      end_op();
+    }
+    fileclose(vma->f);
+    vma_free(vma);
+    p->vma[i] = 0;
+  }
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
@@ -700,4 +731,10 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int lazy_grow_proc(int n) {
+    struct proc *p = myproc();
+    p->sz += n;
+    return 0;
 }

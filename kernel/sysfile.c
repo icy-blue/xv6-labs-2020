@@ -487,10 +487,87 @@ sys_pipe(void)
 
 uint64
 sys_mmap(void) {
-  return 0;
+  struct VMA *vma;
+  struct proc *p = myproc();
+  int length, prot, flags, fd;
+  uint64 sz;
+  if(argint(1, &length) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argint(4, &fd) < 0) {
+    printf("mmap: args fault.\n");
+    return -1;
+  }
+  if(!p->ofile[fd]->readable && (prot & PROT_READ)) {
+    printf("mmap: unreadable.\n");
+    return -1;
+  }
+  if(!p->ofile[fd]->writable && (prot & PROT_WRITE) && (flags == MAP_SHARED)) {
+    printf("mmap: unwritable.\n");
+    return -1;
+  }
+  if((vma = vma_alloc()) == 0) {
+    printf("mmap: vma from table not available.\n");
+    return -1;
+  }
+  acquire(&p->lock);
+  int found = 0;
+  for(int i = 0; i < NVMA; i++) {
+    if(p->vma[i] == 0) {
+      p->vma[i] = vma;
+      found = 1;
+      release(&p->lock);
+      break;
+    }
+  }
+  if(!found) {
+    printf("mmap: vma from proc not available.\n");
+    return -1;
+  }
+  sz = p->sz;
+  if(lazy_grow_proc(length) < 0) {
+    printf("mmap: lazy grow failed.\n");
+    return -1;
+  }
+  vma->addr = sz;
+  vma->length = length;
+  vma->prot = (prot & PROT_READ) | (prot & PROT_WRITE);
+  vma->flags = flags;
+  vma->f = p->ofile[fd];
+  filedup(p->ofile[fd]);
+  return sz;
 }
 
 uint64
 sys_munmap(void) {
-  return 0;
+  struct proc *p = myproc();
+  int start_addr, length;
+  if(argint(0, &start_addr) < 0 || argint(1, &length)) {
+    printf("munmap: get args failed.\n");
+    return -1;
+  }
+  for(int i = 0; i < NVMA; i++) {
+    if(p->vma[i] == 0) continue;
+    if((int)p->vma[i]->addr == start_addr) {
+      if(length >= p->vma[i]->length) {
+        length = p->vma[i]->length;
+      }
+      if(p->vma[i]->prot & PROT_WRITE && p->vma[i]->flags == MAP_SHARED) {
+        begin_op();
+        ilock(p->vma[i]->f->ip);
+        writei(p->vma[i]->f->ip, 1, (uint64)start_addr, 0, length);
+        iunlock(p->vma[i]->f->ip);
+        end_op();
+      }
+      uvmunmap(p->pagetable, (uint64)start_addr, length / PGSIZE, 1);
+      if(length == p->vma[i]->length) {
+        fileclose(p->vma[i]->f);
+        vma_free(p->vma[i]);
+        p->vma[i] = 0;
+        return 0;
+      } else {
+        p->vma[i]->addr += length;
+        p->vma[i]->length -= length;
+        return 0;
+      }
+    }
+  }
+  return -1;
 }

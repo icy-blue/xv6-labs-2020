@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -65,6 +69,60 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 13 ||r_scause() == 15) {
+    uint64 stval = r_stval();
+    if(stval >= p->sz) {
+      p->killed = 1;
+      printf("stval >= p->sz\n");
+      exit(-1);
+    }
+    uint64 protectTop = PGROUNDDOWN(p->trapframe->sp);
+    uint64 stvalTop = PGROUNDUP(stval);
+    if(protectTop == stvalTop) {
+      p->killed = 1;
+      printf("protectTop == stvalTop\n");
+      exit(-1);
+    }
+    struct VMA *vma = 0;
+    int found = 0;
+    uint64 addr = 0;
+    for (int i = 0; i < NVMA; i++) {
+      if (p->vma[i] == 0) continue;
+      addr = p->vma[i]->addr;
+      if (addr <= stval && stval < addr + p->vma[i]->length) {
+        vma = p->vma[i];
+        found = 1;
+        break;
+      }
+    }
+    if (!found) {
+      p->killed = 1;
+      printf("!found\n");
+      exit(-1);
+    }
+    char *mem = kalloc();
+    int prot = PTE_U;
+    if (mem == 0) {
+      p->killed = 1;
+      printf("mem == 0\n");
+      exit(-1);
+    }
+    memset(mem, 0, PGSIZE);
+    ilock(vma->f->ip);
+    readi(vma->f->ip, 0, (uint64) mem, PGROUNDDOWN(stval - addr), PGSIZE);
+    iunlock(vma->f->ip);
+    if (vma->prot & PROT_READ) {
+      prot |= PTE_R;
+    }
+    if (vma->prot & PROT_WRITE) {
+      prot |= PTE_W;
+    }
+    if (mappages(p->pagetable, PGROUNDDOWN(stval), PGSIZE, (uint64) mem, prot) != 0) {
+      kfree(mem);
+      p->killed = 1;
+      printf("mappages(p->pagetable, PGROUNDDOWN(stval), PGSIZE, (uint64) mem, prot) != 0\n");
+      exit(-1);
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
