@@ -51,6 +51,5 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-//    printf("hello\nhello\nhello\n");
     exit(0);
 }
