@@ -91,7 +91,7 @@ kalloc(void)
       if (p) {
         struct run *fp = p, *pre = p;
         while (fp && fp->next) {
-          fp = fp->next->next;
+          fp = fp->next->next; // step 2 while another step 1 foot.
           pre = p;
           p = p->next;
         }
